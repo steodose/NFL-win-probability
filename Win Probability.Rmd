@@ -1,0 +1,282 @@
+---
+title: "NFL Win Probability"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    theme: cosmo
+    social: [ "twitter", "linkedin", "menu" ]
+runtime: shiny
+---
+
+<style>                     
+.navbar {
+  background-color:#000000;
+  border-color:white;
+}
+.navbar-brand {
+color:white!important;
+}
+</style>   
+
+<style type="text/css">
+
+.chart-title {  /* chart_title  */
+   font-size: 15px
+
+</style>
+
+
+```{r global, include = FALSE}
+
+library(flexdashboard)
+library(shiny)
+library(plotly)
+library(reactable)
+library(reactablefmtr)
+library(nflfastR)
+library(nflseedR)
+library(tidyverse)
+library(teamcolors) # NFL team colors and logos
+library(extrafont)
+library(gt)
+library(gtExtras)
+library(ggimage)
+library(animation)
+library(DBI)
+library(RSQLite)
+library(glue)
+library(ggtext)
+
+# Optional but makes R prefer not to display numbers in scientific notation
+options(scipen = 9999)
+
+# Custom ggplot theme (inspired by Owen Phillips at the F5 substack blog)
+theme_custom <- function () { 
+  theme_minimal(base_size=11, base_family="Chivo") %+replace% 
+    theme(
+      panel.grid.minor = element_blank(),
+      plot.background = element_rect(fill = 'transparent', color = "transparent")
+    )
+}
+
+
+# Define 538 table theme for Reactable table(s) below
+theme_538 <- function() {
+    reactable::reactableTheme(
+        searchInputStyle = list(width = "31%", backgroundColor = "#F9F9F9"),
+        style = list(
+            fontFamily = "Chivo"
+        ),
+        headerStyle = list(
+            "&:hover[aria-sort]" = list(
+                background = "hsl(0, 0%, 80%)"),
+            "&[aria-sort='ascending'], &[aria-sort='descending']" = list(
+                background = "#555",
+                color = "#FFF"
+            ),
+            borderColor = "#333"
+        ),
+        borderColor = "#CDCDCD"
+    )
+}
+
+
+# load play by play data from nflfastR
+pbp_data <- load_pbp(2022)
+
+#Load games data from Lee Sharpe/nflseedR
+games <- load_sharpe_games() %>% 
+  filter(season == 2022)
+
+
+```
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+
+``` {r}
+
+ selectInput("gameInput", label = h3("Select Game"), 
+    choices = unique(pbp_data$game_id),
+    selected="2022_01_BUF_LA", multiple = FALSE)
+
+```
+
+Choose a game from the 2022 season to see its play-by-play win probability chart. For example, selecting "2022_01_BUF_LA" will show you win probability for the 2022 Week 1 matchup between the Buffalo Bills and Los Angeles Rams.
+
+Row
+-----------------------------------------------------------------------
+
+### Win Probability Charts
+    
+```{r}
+
+# select game id and filter data
+ wp_plot <- reactive({
+        pbp_data %>%
+     filter(game_id == input$gameInput) %>%
+     filter(!is.na(home_wp),
+            !is.na(away_wp)) %>%
+     select(game_seconds_remaining,
+                    home_wp, away_wp) %>%
+  gather(team, wpa, -game_seconds_remaining)
+    })
+
+
+ # make wp plot
+renderPlotly({
+  ggplotly(ggplot(wp_plot(), aes(x = game_seconds_remaining, y = wpa, color = team)) +
+  geom_line(size = 1.2) +
+  geom_hline(yintercept = 0.5, color = "gray", linetype = "dashed") +
+  #scale_color_manual(labels = c("SF", "GB"),
+   #                  values = c(la_color, tb_color),
+    #                 guide = FALSE) +
+  #scale_x_reverse(breaks = seq(0, 3600, 300)) + 
+  geom_vline(xintercept = 900, linetype = "dashed") + 
+  geom_vline(xintercept = 1800, linetype = "dashed") + 
+  geom_vline(xintercept = 2700, linetype = "dashed") + 
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  labs(
+    x = "",
+    y = "",
+    title = "2022 Win Probability",
+    subtitle = glue("Team Home vs Team Away")
+  ) + 
+  theme_custom() +
+  theme(plot.title = element_text(face="bold")) +
+  scale_x_continuous(
+    trans = "reverse",
+    breaks = c(2700, 1800, 900, 0), 
+    labels = c("END\nQ1", "HALF\nTIME", "END\nQ3", "END\nQ4")) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(plot.subtitle = element_markdown())
+  )
+})
+
+```
+
+
+Row {.tabset}
+-----------------------------------------------------------------------
+
+### Games
+    
+```{r}
+
+# Make games table
+games2 <- games %>% 
+  select(game_id, game_type, gameday, week, away_team:home_score, spread_line, 
+         away_spread_odds, home_spread_odds,away_qb_name, home_qb_name, stadium)
+
+# Get team logos
+team_logos <- nflfastR::teams_colors_logos
+
+# Get player headshots
+rosters <- nflfastR::fast_scraper_roster(seasons = 2022) %>% 
+  select(full_name, headshot_url)
+
+
+# join in team logos and headshots for inclusion in table
+games2 <- left_join(games2, team_logos, by = c("away_team" = "team_abbr")) #Away teams
+games2 <- left_join(games2, team_logos, by = c("home_team" = "team_abbr")) #Home teams
+
+#games2 <- left_join(games2, rosters, by = c("away_qb_name" = "full_name")) #Away QBs
+#games2 <- left_join(games2, rosters, by = c("home_qb_name" = "full_name")) #Home QBs
+
+
+
+# Reactable table setup
+
+games_table <- reactive({
+  games2 %>%
+    select(week, gameday, game_type, team_logo_espn.x, away_team, away_score, team_logo_espn.y, home_team, home_score, spread_line,  away_spread_odds, home_spread_odds) %>% 
+  rename(team_logo_espn_away = team_logo_espn.x,
+         team_logo_espn_home = team_logo_espn.y)
+    })
+
+
+# render table
+renderReactable({
+  reactable(games_table(),
+  theme = theme_538,
+                  showSortIcon = TRUE,
+                  searchable = TRUE,
+                  language = reactableLang(
+                      searchPlaceholder = "SEARCH FOR A TEAM (ABBR)..."),
+                  defaultPageSize = 100,
+                  columns = list(
+                      week = colDef(name = "Week",
+                                       align = "center"),
+                      gameday = colDef(name = "Date",
+                                       align = "right",
+                                       minWidth = 120),
+                      game_type = colDef(name = "Round",
+                                         style = list(borderRight = "2px solid #555"),
+                                       align = "right"),
+                      away_team = colDef(name = "Away",
+                                       align = "right"),
+                      away_score = colDef(name = "Away Score",
+                                       align = "right"),
+                      home_team = colDef(name = "Home",
+                                       align = "right"),
+                      home_score = colDef(name = "Home Score",
+                                       align = "right"),
+                      spread_line = colDef(name = "Spread Line",
+                                           style = list(borderLeft = "2px solid #555"),
+                                       align = "right"),
+                      away_spread_odds = colDef(name = "Away Spread",
+                                       align = "right"),
+                      home_spread_odds = colDef(name = "Home Spread",
+                                       align = "right"),
+                      
+                      ### add logos using embed_img()
+                      team_logo_espn_home = colDef(
+                          name = "",
+                          maxWidth = 40,
+                          align = "right",
+                          cell = embed_img(height = "25", width = "30")
+                      ),
+                      team_logo_espn_away = colDef(
+                          name = "",
+                          maxWidth = 40,
+                          align = "right",
+                          cell = embed_img(height = "25", width = "30")
+                      )),
+  
+                  pagination = FALSE,
+                  compact = TRUE, 
+                  borderless = FALSE, 
+                  striped = FALSE,
+                  fullWidth = FALSE, 
+                  defaultColDef = colDef(align = "center", minWidth = 95)
+        ) %>% 
+  add_title("2022 NFL Season",
+            font_size = 28) %>% 
+  add_subtitle("Every NFL game by week, including scores and Vegas spreads. Click a column header to sort by that statistic.",
+               font_size = 14,
+               font_weight = "normal") %>% 
+  add_source("Data: nflverse")
+  
+})
+ 
+
+```
+
+
+### About
+
+**NFL Win Probability Tool**
+
+This dashboard looks at individual game win probability. It uses play-by-play data from Ben Baldwin and Sebastian Carl’s nflfastR package.  nflfastR is an extension of the original work done by the nflscrapR team (Maksim Horowitz, Ron Yurko, and Sam Ventura). App created by [Stephan Teodosescu](https://stephanteodosescu.com/).
+
+
+More on these metrics and the models underpinning them can be found at [Open Source Football](https://www.opensourcefootball.com/posts/2020-09-28-nflfastr-ep-wp-and-cp-models/).
+
+
+This dashboard is built with R using the [Rmarkdown](https://rmarkdown.rstudio.com/) and [flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) frameworks. The code behind the dashboard is made available [here](https://github.com/steodose/imdb-ratings/tree/master)
+
+
+**Other Info**
+
+Check out my [NFL Analytics site](https://stephanteodosescu.com/NFL/NFL-Summary-Report.html) for more advanced stats and analysis of the current NFL season. For any questions or feedback, you can contact me on [Twitter](https://twitter.com/steodosescu).
