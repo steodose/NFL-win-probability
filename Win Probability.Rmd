@@ -274,7 +274,7 @@ This dashboard looks at individual game win probability. It uses play-by-play da
 More on these metrics and the models underpinning them can be found at [Open Source Football](https://www.opensourcefootball.com/posts/2020-09-28-nflfastr-ep-wp-and-cp-models/).
 
 
-This dashboard is built with R using the [Rmarkdown](https://rmarkdown.rstudio.com/) and [flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) frameworks. The code behind the dashboard is made available [here](https://github.com/steodose/imdb-ratings/tree/master)
+This dashboard is built with R using the [Rmarkdown](https://rmarkdown.rstudio.com/) and [flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) frameworks. The code behind the dashboard is made available [here](https://github.com/steodose/NFL-win-probability)
 
 
 **Other Info**
