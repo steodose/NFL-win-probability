@@ -5,6 +5,8 @@ output:
     orientation: rows
     vertical_layout: scroll
     theme: cosmo
+    logo: favicon_32x32.png
+    favicon: favicon_32x32.png
     social: [ "twitter", "linkedin", "menu" ]
 runtime: shiny
 ---
@@ -47,6 +49,7 @@ library(DBI)
 library(RSQLite)
 library(glue)
 library(ggtext)
+library(scales)
 
 # Optional but makes R prefer not to display numbers in scientific notation
 options(scipen = 9999)
@@ -82,12 +85,20 @@ theme_538 <- function() {
 }
 
 
-# load play by play data from nflfastR
-pbp_data <- load_pbp(2022)
+# load play by play data from nflfastR and create unique game id column for selector input
+pbp_data <- load_pbp(2022) %>%
+  mutate(game_week = str_c("Week", week, sep = " ")) %>%
+  mutate(game = str_c(away_team, home_team, sep ="-")) %>%
+  mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
+  select(-game_week, -game)
 
 #Load games data from Lee Sharpe/nflseedR
 games <- load_sharpe_games() %>% 
-  filter(season == 2022)
+  filter(season == 2022) %>%
+  mutate(game_week = str_c("Week", week, sep = " ")) %>%
+  mutate(game = str_c(away_team, home_team, sep ="-")) %>%
+  mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
+  select(-game_week, -game)
 
 
 ```
@@ -98,24 +109,132 @@ Inputs {.sidebar}
 ``` {r}
 
  selectInput("gameInput", label = h3("Select Game"), 
-    choices = unique(pbp_data$game_id),
-    selected="2022_01_BUF_LA", multiple = FALSE)
+    choices = unique(pbp_data$unique_game_id),
+    selected="Week 1: BUF-LA", multiple = FALSE)
 
 ```
 
-Choose a game from the 2022 season to see its play-by-play win probability chart. For example, selecting "2022_01_BUF_LA" will show you win probability for the 2022 Week 1 matchup between the Buffalo Bills and Los Angeles Rams.
+Choose a game from the 2022 season to see its play-by-play win probability chart. Data sourced from nflfastR, and is updated after the conclusion of each window of games.
 
 Row
 -----------------------------------------------------------------------
 
-### Win Probability Charts
+### GEI {.value-box}
+
+```{r}
+
+## Normalize for length of games for Excitement Index calculation
+
+pbp_wp <- pbp_data %>% 
+  filter(!is.na(home_wp), !is.na(away_wp)) %>%
+  group_by(game_id) %>% 
+  mutate(win_prob_change = wpa - lag(wpa)) %>% #redundant so won't use win_prob_change going forward
+  relocate(win_prob_change) %>% 
+  drop_na(win_prob_change) #omit rows that have NA WP
+
+# filter for OT games and calculate how long each one went
+ot_games <- pbp_wp %>% 
+  filter(qtr == 5) %>% 
+  group_by(unique_game_id) %>% 
+  summarise(ot_length = max(game_seconds_remaining) - min(game_seconds_remaining))
+
+#calculate raw GEI
+games_gei <- pbp_wp %>%
+  group_by(unique_game_id) %>%
+  summarise(gei = round(sum(abs(wpa)),2)) %>% #this is how I'm calculating GEI
+  relocate(gei)
+
+# now join in OT game lengths to calculate GEIs normalized for game length
+games_gei <- games_gei %>% 
+  left_join(ot_games) %>% 
+  mutate(game_length = 3600 + ot_length, 
+         game_length = replace_na(game_length, 3600),
+         normalization = 3600/game_length,
+         gei = round(gei*normalization, digits = 2))
+
+
+total_gei <- reactive({
+  games_gei %>% 
+  filter(unique_game_id == input$gameInput) %>% 
+  summarise(gei = max(gei))
+})
+
+# Put valueBox() inside renderValueBox({})
+renderValueBox({
+  valueBox(value = total_gei(), 
+           caption = "Game Excitement Index (GEI)",
+           color = "#013369",
+           icon = "fa-fire")
+})
+```
+
+
+### GEI rankings {.value-box}
+
+```{r}
+
+games_gei_rankings <- games_gei %>% 
+    arrange(desc(gei)) %>%
+    mutate(rank = row_number()) %>% 
+    relocate(rank)
+
+gei_rank <- reactive({
+  games_gei_rankings %>% 
+  filter(unique_game_id == input$gameInput) %>% 
+  pull(rank)
+})
+
+
+games_played <- length(games_gei$gei)
+
+
+# Put valueBox() inside renderValueBox({})
+renderValueBox({
+  valueBox(value = paste(gei_rank(), games_played, sep = "/"), 
+           caption = "Excitement Ranking",
+           color = "#013369",
+           icon = "fa-thumbs-up")
+})
+
+```
+
+
+### GEI vs Avg {.value-box}
+
+```{r}
+
+# average GEI this season
+gei_avg <- round(mean(games_gei$gei), digits = 2)
+
+
+total_gei <- reactive({
+  games_gei %>% 
+  filter(unique_game_id == input$gameInput) %>% 
+  summarise(gei = max(gei))
+})
+
+
+# Put valueBox() inside renderValueBox({})
+renderValueBox({
+  valueBox(value = total_gei() - gei_avg, 
+           caption = "GEI vs. NFL Average",
+           color = "#013369",
+           icon = "fa-chart-bar")
+})
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Win Probability Chart {data-width=666.66}
     
 ```{r}
 
 # select game id and filter data
  wp_plot <- reactive({
         pbp_data %>%
-     filter(game_id == input$gameInput) %>%
+     filter(unique_game_id == input$gameInput) %>%
      filter(!is.na(home_wp),
             !is.na(away_wp)) %>%
      select(game_seconds_remaining,
@@ -150,23 +269,97 @@ renderPlotly({
     breaks = c(2700, 1800, 900, 0), 
     labels = c("END\nQ1", "HALF\nTIME", "END\nQ3", "END\nQ4")) +
   scale_y_continuous(labels = scales::percent_format()) +
-  theme(plot.subtitle = element_markdown())
+  theme(plot.subtitle = element_markdown()),
+  tooltip = 
   )
 })
 
 ```
 
 
+### Outcome {data-width=333.34}
+    
+```{r}
+
+# filter game data
+
+games2 <- games %>% 
+  select(unique_game_id, game_type, gameday, week, away_team:home_score, spread_line, 
+         away_spread_odds, home_spread_odds,away_qb_name, home_qb_name, stadium)
+
+# reshape data to make one row per team-game
+games_long <- games2 %>%
+  pivot_longer(cols = c(away_score, home_score),
+               names_to = "home_away",
+               values_to = "score") %>%
+  mutate(team = ifelse(home_away == "home_score", home_team, away_team))
+
+# Get team logos
+team_logos <- nflfastR::teams_colors_logos
+
+# join in team logos for inclusion in table
+games_long <- left_join(games_long, team_logos, by = c("team" = "team_abbr"))
+
+
+ gt_table <- reactive({
+   games_long %>% #change this when games_long is right
+     filter(unique_game_id == input$gameInput) %>%
+     select(gameday, week, team_logo_espn, team_nick, score)
+     })
+
+ # render gt table
+ render_gt(
+   gt(gt_table()) %>% 
+  cols_label(gameday = "Date",
+             team_logo_espn = "",
+             week = "Week",
+             team_nick = "Team",
+             score = "Score") %>% 
+    gt_img_rows(team_logo_espn) %>%
+     cols_align(align = "center",
+                columns = gameday) %>%
+    cols_align(align = "center",
+                columns = week) %>%
+    tab_header(
+        title = md(""), 
+        subtitle = ""
+    )  %>% 
+    tab_options(
+        column_labels.background.color = "white",
+        table.border.top.width = px(3),
+        table.border.top.color = "white",
+        table.border.bottom.color = "white",
+        table.border.bottom.width = px(3),
+        column_labels.border.top.width = px(3),
+        column_labels.border.top.color = "white",
+        column_labels.border.bottom.width = px(3),
+        column_labels.border.bottom.color = "black",
+        column_labels.font.weight = "bold",
+        data_row.padding = px(3),
+        source_notes.font.size = 12,
+        table.font.size = 20,
+        heading.align = "left"
+    )  %>%
+    tab_source_note(
+        source_note = md("Table: @steodosescu | Data: nflfastR")
+    )
+ )
+
+
+```
+
+
+
 Row {.tabset}
 -----------------------------------------------------------------------
 
-### Games
+### All Games
     
 ```{r}
 
 # Make games table
 games2 <- games %>% 
-  select(game_id, game_type, gameday, week, away_team:home_score, spread_line, 
+  select(unique_game_id, game_type, gameday, week, away_team:home_score, spread_line, 
          away_spread_odds, home_spread_odds,away_qb_name, home_qb_name, stadium)
 
 # Get team logos
@@ -264,19 +457,29 @@ renderReactable({
 ```
 
 
+
 ### About
 
 **NFL Win Probability Tool**
 
-This dashboard looks at individual game win probability. It uses play-by-play data from Ben Baldwin and Sebastian Carl’s nflfastR package.  nflfastR is an extension of the original work done by the nflscrapR team (Maksim Horowitz, Ron Yurko, and Sam Ventura). App created by [Stephan Teodosescu](https://stephanteodosescu.com/).
+This dashboard looks at individual NFL game win probability. It uses play-by-play data from Ben Baldwin and Sebastian Carl’s nflfastR package.  nflfastR is an extension of the original work done by the nflscrapR team (Maksim Horowitz, Ron Yurko, and Sam Ventura). App created by [Stephan Teodosescu](https://stephanteodosescu.com/personal-website/).
 
+
+**What is Win Probability?**
+
+Win Probability (WP) is an estimate of a team’s likelihood of winning the game at a point in time given the current situation at the start of that play. Win Probability Added (WPA) is the change in WP from one play to the next. If you graph these WP changes throughout the course of the game you will get a visual representation of how that game played out. The nflfastR model uses logistic regression to model likelihood of winning after each play of the game based on the score, field position, home field advantage, distance to the first down, time remaining, etc.
+
+**How do we measure game excitement?**
+
+To measure how exciting an individual game is, I computed a Game Excitement Index (GEI) similar to what [Luke Benz](https://www.midmajormadness.com/2019/12/30/21041851/win-probability-charts-2019-game-excitement-index-college-basketball) has done in college basketball. The approach is to sum the absolute value of the win probability change from each play and multiply by a normalized time parameter. This gives us an index by which we can rank each game’s excitement factor. The way to interpret, for example, a Game Excitement Index of 4.0 is that the win probability changed by a total of 400% over the course of that game. The higher the number, the more exciting the game.
+
+GEI is not a perfect metric, and it might fail to capture important aspects of the game that fans might find exciting, but it does give us a sense of the flow of games and a way to quantify the excitement of playoff football. I wrote about this idea at my blog [Between the Pipes](https://between-the-pipes.com/2022/01/29/divisional-round-was-one-of-the-most-exciting-weekends-in-nfl-history/) in January 2022. 
 
 More on these metrics and the models underpinning them can be found at [Open Source Football](https://www.opensourcefootball.com/posts/2020-09-28-nflfastr-ep-wp-and-cp-models/).
 
 
-This dashboard is built with R using the [Rmarkdown](https://rmarkdown.rstudio.com/) and [flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) frameworks. The code behind the dashboard is made available [here](https://github.com/steodose/NFL-win-probability)
-
-
 **Other Info**
+
+This dashboard is built with R using the [Rmarkdown](https://rmarkdown.rstudio.com/) and [flexdashboard](https://rmarkdown.rstudio.com/flexdashboard/) frameworks. The code behind the dashboard is made available [here](https://github.com/steodose/NFL-win-probability).
 
 Check out my [NFL Analytics site](https://stephanteodosescu.com/NFL/NFL-Summary-Report.html) for more advanced stats and analysis of the current NFL season. For any questions or feedback, you can contact me on [Twitter](https://twitter.com/steodosescu).
