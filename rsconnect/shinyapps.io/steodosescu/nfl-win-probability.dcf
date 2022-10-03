@@ -5,7 +5,7 @@ account: steodosescu
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 7180837
-bundleId: 6362063
+bundleId: 6362109
 url: https://steodosescu.shinyapps.io/nfl-win-probability/
-when: 1664758239.68581
-lastSyncTime: 1664758239.68582
+when: 1664760241.65237
+lastSyncTime: 1664760241.65239

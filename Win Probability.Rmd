@@ -260,7 +260,7 @@ renderPlotly({
   labs(
     x = "",
     y = "",
-    title = "2022 Win Probability",
+    title = "Win Probability",
     subtitle = glue("Team Home vs Team Away")
   ) + 
   theme_custom() +
@@ -394,6 +394,10 @@ games_table <- reactive({
 renderReactable({
   reactable(games_table(),
   theme = theme_538,
+  columnGroups = list(
+                      colGroup(name = "Pre-Game Vegas Odds", 
+                               columns = c("spread_line", "away_spread_odds", "home_spread_odds"))
+                  ),
                   showSortIcon = TRUE,
                   searchable = TRUE,
                   language = reactableLang(
