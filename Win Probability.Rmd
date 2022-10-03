@@ -217,7 +217,8 @@ total_gei <- reactive({
 # Put valueBox() inside renderValueBox({})
 renderValueBox({
   valueBox(value = total_gei() - gei_avg, 
-           caption = "GEI vs. NFL Average",
+          # value = glue(ifelse(total_gei() - gei_avg >= 0, "+", ""), {total_gei() - gei_avg}), 
+           caption = "GEI above/below avg NFL game (+/-)",
            color = "#013369",
            icon = "fa-chart-bar")
 })
