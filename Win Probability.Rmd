@@ -50,9 +50,10 @@ library(RSQLite)
 library(glue)
 library(ggtext)
 library(scales)
+library(ggiraph)
 
-# Optional but makes R prefer not to display numbers in scientific notation
-options(scipen = 9999)
+# Optional but makes R prefer not to display numeric values in a certain way
+options(digits = 1)
 
 # Custom ggplot theme (inspired by Owen Phillips at the F5 substack blog)
 theme_custom <- function () { 
@@ -86,7 +87,7 @@ theme_538 <- function() {
 
 
 # load play by play data from nflfastR and create unique game id column for selector input
-pbp_data <- load_pbp(2022) %>%
+pbp_data <- load_pbp(2024) %>%
   mutate(game_week = str_c("Week", week, sep = " ")) %>%
   mutate(game = str_c(away_team, home_team, sep ="-")) %>%
   mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
@@ -94,7 +95,7 @@ pbp_data <- load_pbp(2022) %>%
 
 #Load games data from Lee Sharpe/nflseedR
 games <- load_sharpe_games() %>% 
-  filter(season == 2022) %>%
+  filter(season == 2024) %>%
   mutate(game_week = str_c("Week", week, sep = " ")) %>%
   mutate(game = str_c(away_team, home_team, sep ="-")) %>%
   mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
@@ -110,11 +111,11 @@ Inputs {.sidebar}
 
  selectInput("gameInput", label = h3("Select Game"), 
     choices = unique(pbp_data$unique_game_id),
-    selected="Week 1: BUF-LA", multiple = FALSE)
+    selected="Week 1: BAL-KC", multiple = FALSE)
 
 ```
 
-Choose a game from the 2022 season to see its play-by-play win probability chart. Data sourced from nflfastR, and is updated after the conclusion of each window of games.
+Choose a game from the current season to see its play-by-play win probability chart. Data sourced from nflfastR, and is updated after the conclusion of each window of games.
 
 Row
 -----------------------------------------------------------------------
@@ -367,7 +368,7 @@ games2 <- games %>%
 team_logos <- nflfastR::teams_colors_logos
 
 # Get player headshots
-rosters <- nflfastR::fast_scraper_roster(seasons = 2022) %>% 
+rosters <- nflfastR::fast_scraper_roster(seasons = 2024) %>% 
   select(full_name, headshot_url)
 
 
@@ -449,7 +450,7 @@ renderReactable({
                   fullWidth = FALSE, 
                   defaultColDef = colDef(align = "center", minWidth = 95)
         ) %>% 
-  add_title("2022 NFL Season",
+  add_title("2024 NFL Season",
             font_size = 28) %>% 
   add_subtitle("Every NFL game by week, including scores and Vegas spreads. Click a column header to sort by that statistic.",
                font_size = 14,
