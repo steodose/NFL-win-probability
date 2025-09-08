@@ -87,7 +87,7 @@ theme_538 <- function() {
 
 
 # load play by play data from nflfastR and create unique game id column for selector input
-pbp_data <- load_pbp(2024) %>%
+pbp_data <- load_pbp(2025) %>%
   mutate(game_week = str_c("Week", week, sep = " ")) %>%
   mutate(game = str_c(away_team, home_team, sep ="-")) %>%
   mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
@@ -95,7 +95,7 @@ pbp_data <- load_pbp(2024) %>%
 
 #Load games data from Lee Sharpe/nflseedR
 games <- load_sharpe_games() %>% 
-  filter(season == 2024) %>%
+  filter(season == 2025) %>%
   mutate(game_week = str_c("Week", week, sep = " ")) %>%
   mutate(game = str_c(away_team, home_team, sep ="-")) %>%
   mutate(unique_game_id = str_c(game_week, game, sep = ": ")) %>%
@@ -368,7 +368,7 @@ games2 <- games %>%
 team_logos <- nflfastR::teams_colors_logos
 
 # Get player headshots
-rosters <- nflfastR::fast_scraper_roster(seasons = 2024) %>% 
+rosters <- nflfastR::fast_scraper_roster(seasons = 2025) %>% 
   select(full_name, headshot_url)
 
 
@@ -450,7 +450,7 @@ renderReactable({
                   fullWidth = FALSE, 
                   defaultColDef = colDef(align = "center", minWidth = 95)
         ) %>% 
-  add_title("2024 NFL Season",
+  add_title("2025 NFL Season",
             font_size = 28) %>% 
   add_subtitle("Every NFL game by week, including scores and Vegas spreads. Click a column header to sort by that statistic.",
                font_size = 14,
